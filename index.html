@@ -91,6 +91,30 @@ main { min-width: 0; padding: 0 var(--gutter-r) 48px 24px; }
 .chip:hover { background: var(--line); }
 .chip.on { background: var(--fg); color: var(--bg); }
 
+.filter-toggle { display: inline-flex; align-items: center; gap: 8px; }
+.filter-toggle .badge { background: var(--accent); color: #fff; border-radius: 999px; font-size: 11px; font-weight: 700; padding: 0 7px; line-height: 18px; }
+.filters {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px 24px;
+  padding: 16px; margin-bottom: 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel);
+}
+.f-group h4 { margin: 0 0 8px; font: 600 11px var(--font-body); text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted); }
+.seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.seg button { border: 1px solid var(--line); background: var(--panel-2); border-radius: 8px; padding: 5px 11px; cursor: pointer; font-size: 13px; }
+.seg button:hover { border-color: var(--muted); }
+.seg button.on { background: var(--fg); color: var(--bg); border-color: var(--fg); font-weight: 600; }
+.f-foot { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+.f-foot button { background: none; border: 0; color: var(--fg); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; font-size: 13px; padding: 0; }
+.f-foot label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.f-foot input { accent-color: var(--accent); }
+.hide-btn {
+  position: absolute; top: 6px; right: 6px; width: 30px; height: 30px; border-radius: 50%; border: 0; cursor: pointer;
+  background: rgba(0,0,0,.75); color: #fff; font-size: 16px; line-height: 30px; opacity: 0; transition: opacity .15s;
+}
+.card:hover .hide-btn, .hide-btn:focus-visible { opacity: 1; }
+@media (hover: none) { .hide-btn { opacity: .85; } }
+.card.is-hidden .thumb img { filter: grayscale(1) brightness(.5); }
+.card.is-hidden .hide-btn { opacity: 1; }
+.official { color: var(--fg); font-weight: 600; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 28px 18px; }
 .card { display: flex; flex-direction: column; gap: 10px; min-width: 0; cursor: pointer; }
 .thumb { position: relative; aspect-ratio: 16/9; max-width: 100%; border-radius: 12px; overflow: hidden; background: var(--panel); }
@@ -191,11 +215,38 @@ const KINDS = [
   { id: 'directo', name: 'En directo' },
   { id: 'charla',  name: 'Entrevistas y docs' },
 ];
+const FILTERS = {
+  origin: { name: 'Origen', opts: [['all', 'Todos'], ['official', 'Canales oficiales'], ['fans', 'Subidos por fans']] },
+  len: { name: 'Duración', opts: [['all', 'Cualquiera'], ['short', 'Menos de 4 min'], ['mid', '4 a 20 min'], ['long', 'Más de 20 min']] },
+  views: { name: 'Visualizaciones', opts: [['0', 'Cualquiera'], ['10000', '+10 mil'], ['100000', '+100 mil'], ['1000000', '+1 millón']] },
+};
+// Canales del propio Yung Beef, sus grupos, su sello y los artistas con los que colabora.
+const OFFICIAL = /- Topic$|VEVO|^YUNG BEEF AKA|^PXXR TRVP$|^LOS SANTOS$|^La Mafia Del Amor Official$|^La Vendicion Records$|^KEFTA BOYZ$|^fernandito kitkat$|^(Zaramay|Quevedo|El Bogueto|Xiyo y Fernandezz|DELLAFUENTE|Albany|Soto Asa|Pablo Chill-E|Kaydy Cain|Goa777|TAKERS|OMAR MONTES|SAIKO|FLOWTIAGO|WORLDSTARHIPHOP|El último plan B \(Canal Oficial\)|Messiah El Artista|Eix|BabyMurda|El Bugg|IL NENE DE ORO|ladiferencia2006|Neon Knife|Pipo Beatz|Gallery Sessions|Primavera Sound|GQSpain|La Resistencia por Movistar Plus)/;
 const PAGE = 48;
 const aliasById = Object.fromEntries(ALIASES.map(a => [a.id, a]));
-const state = { alias: 'all', kind: 'all', q: '', shown: PAGE, order: 'top' };
+const DEFAULTS = { origin: 'all', len: 'all', views: '0' };
+const state = { alias: 'all', kind: 'all', q: '', shown: PAGE, order: 'new', panel: false, showHidden: false, ...DEFAULTS };
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('beeftube:' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem('beeftube:' + k, JSON.stringify(v)); } catch {} },
+};
+Object.assign(state, store.get('filters', {}));
+const hidden = new Set(store.get('hidden', []));
 const V = window.VIDEOS;
-V.forEach((v, i) => { v.i = i; v.views = parseInt((v.v || '').replace(/\D/g, '')) || 0; });
+const secs = d => (d || '').split(':').reduce((t, x) => t * 60 + (+x || 0), 0);
+V.forEach((v, i) => {
+  v.i = i;
+  v.views = parseInt((v.v || '').replace(/\D/g, '')) || 0;
+  v.secs = secs(v.d);
+  v.official = OFFICIAL.test(v.c);
+});
+const activeFilters = () => Object.keys(DEFAULTS).filter(k => state[k] !== DEFAULTS[k]).length;
+function saveFilters() { store.set('filters', { origin: state.origin, len: state.len, views: state.views }); }
+function lenOk(v) {
+  if (state.len === 'all') return true;
+  if (!v.secs) return false;
+  return state.len === 'short' ? v.secs < 240 : state.len === 'mid' ? v.secs >= 240 && v.secs <= 1200 : v.secs > 1200;
+}
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -207,7 +258,12 @@ function filtered() {
   let list = V.filter(v =>
     (state.alias === 'all' || v.tags.includes(state.alias)) &&
     (state.kind === 'all' || v.k === state.kind) &&
-    (!q || norm(v.t + ' ' + v.c).includes(q)));
+    (!q || norm(v.t + ' ' + v.c).includes(q)) &&
+    (state.origin === 'all' || (state.origin === 'official') === v.official) &&
+    lenOk(v) &&
+    v.views >= +state.views &&
+    (state.showHidden || !hidden.has(v.id)));
+  if (state.order === 'new') list = [...list].sort((a, b) => (b.f || '').localeCompare(a.f || '') || b.views - a.views);
   if (state.order === 'views') list = [...list].sort((a, b) => b.views - a.views);
   if (state.order === 'shuffle') list = [...list].sort(() => Math.random() - 0.5);
   return list;
@@ -221,7 +277,33 @@ function tagsHtml(v) {
   return v.tags.map(t => `<span class="tag">${aliasById[t].name}</span>`).join('');
 }
 function subLine(v) {
-  return [v.c, v.v && `${v.v} visualizaciones`, v.p].filter(Boolean).map(esc).join(' · ');
+  const ch = v.official ? `<span class="official" title="Canal oficial">${esc(v.c)} ✓</span>` : esc(v.c);
+  return [ch, ...[v.v && `${v.v} visualizaciones`, fecha(v.f)].filter(Boolean).map(esc)].join(' · ');
+}
+const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+function fecha(f) {
+  if (!f) return '';
+  const [y, m, d] = f.split('-');
+  return `${+d} ${MESES[+m - 1]} ${y}`;
+}
+
+function filtersHtml() {
+  const n = activeFilters();
+  const groups = Object.entries(FILTERS).map(([k, f]) => `
+    <div class="f-group"><h4>${f.name}</h4><div class="seg">
+      ${f.opts.map(([id, name]) => `<button data-filter="${k}" data-val="${id}" class="${state[k] === id ? 'on' : ''}" aria-pressed="${state[k] === id}">${name}</button>`).join('')}
+    </div></div>`).join('');
+  return `<div class="filters" id="filters">${groups}
+    <div class="f-foot">
+      ${n ? `<button id="clearFilters">Quitar filtros (${n})</button>` : '<span>Sin filtros activos</span>'}
+      <label><input type="checkbox" id="showHidden" ${state.showHidden ? 'checked' : ''}> Mostrar videos ocultos (${hidden.size})</label>
+      ${hidden.size ? '<button id="restoreHidden">Restaurar todos los ocultos</button>' : ''}
+    </div></div>`;
+}
+
+function toggleHidden(id) {
+  hidden.has(id) ? hidden.delete(id) : hidden.add(id);
+  store.set('hidden', [...hidden]);
 }
 
 function renderNav() {
@@ -239,19 +321,23 @@ function renderNav() {
 function renderGrid() {
   const list = filtered();
   $('#count').textContent = `${list.length} videos`;
-  const chips = [['top', 'Destacados'], ['views', 'Más vistos'], ['shuffle', 'Aleatorio']]
+  const n = activeFilters();
+  const chips = `<button class="chip filter-toggle ${state.panel ? 'on' : ''}" id="filterToggle" aria-expanded="${state.panel}">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5h18v2H3zm4 6h10v2H7zm3 6h4v2h-4z"/></svg>Filtros${n ? `<span class="badge">${n}</span>` : ''}</button>`
+    + [['new', 'Más recientes'], ['views', 'Más vistos'], ['top', 'Destacados'], ['shuffle', 'Aleatorio']]
     .map(([id, n]) => `<button class="chip ${state.order === id ? 'on' : ''}" data-order="${id}">${n}</button>`).join('')
     + ALIASES.slice(1).map(a => `<button class="chip ${state.alias === a.id ? 'on' : ''}" data-alias="${a.id}">${a.name}</button>`).join('');
   const cards = list.slice(0, state.shown).map(v => `
-    <a class="card" href="#ver=${v.id}">
-      <div class="thumb"><img loading="lazy" src="${thumb(v.id)}" alt="">${v.d ? `<span class="dur">${esc(v.d)}</span>` : ''}</div>
+    <a class="card ${hidden.has(v.id) ? 'is-hidden' : ''}" href="#ver=${v.id}">
+      <div class="thumb"><img loading="lazy" src="${thumb(v.id)}" alt="">${v.d ? `<span class="dur">${esc(v.d)}</span>` : ''}
+        <button class="hide-btn" data-hide="${v.id}" title="${hidden.has(v.id) ? 'Volver a mostrar' : 'Ocultar este video'}" aria-label="${hidden.has(v.id) ? 'Volver a mostrar' : 'Ocultar este video'}">${hidden.has(v.id) ? '↺' : '✕'}</button></div>
       <div class="meta">${avatar(v)}<div class="meta-text">
         <div class="title">${esc(v.t)}</div>
         <div class="sub">${subLine(v)}</div>
         <div class="tags">${tagsHtml(v)}</div>
       </div></div>
     </a>`).join('');
-  $('#main').innerHTML = `<div class="chips">${chips}</div>` +
+  $('#main').innerHTML = `<div class="chips">${chips}</div>` + (state.panel ? filtersHtml() : '') +
     (list.length ? `<div class="grid">${cards}</div>` : `<p class="empty">No hay videos con esa búsqueda. Prueba con otro título o quita los filtros.</p>`) +
     (list.length > state.shown ? `<button class="more" id="more">Mostrar más (${list.length - state.shown} restantes)</button>` : '');
 }
@@ -270,8 +356,9 @@ function renderWatch(id) {
         <div class="player"><iframe src="https://www.youtube-nocookie.com/embed/${v.id}?autoplay=1&rel=0" title="${esc(v.t)}"
           allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>
         <h1>${esc(v.t)}</h1>
-        <div class="watch-row">${avatar(v)}<div><div class="ch">${esc(v.c)}</div><div class="sub">${[v.v && v.v + ' visualizaciones', v.p].filter(Boolean).map(esc).join(' · ')}</div></div>
-          <a class="yt-link" href="${url}" target="_blank" rel="noopener">Ver en YouTube ↗</a></div>
+        <div class="watch-row">${avatar(v)}<div><div class="ch">${esc(v.c)}</div><div class="sub">${[v.v && v.v + ' visualizaciones', fecha(v.f) && 'publicado el ' + fecha(v.f)].filter(Boolean).map(esc).join(' · ')}</div></div>
+          <button class="yt-link" data-hide="${v.id}" style="margin-left:auto;border:0;cursor:pointer">${hidden.has(v.id) ? 'Volver a mostrar' : 'No es de Yung Beef: ocultar'}</button>
+          <a class="yt-link" style="margin-left:0" href="${url}" target="_blank" rel="noopener">Ver en YouTube ↗</a></div>
         <div class="box"><div class="tags" style="margin:0 0 6px">${tagsHtml(v)}</div>Si el video no se reproduce aquí, el canal ha desactivado la reproducción fuera de YouTube. Usa el botón «Ver en YouTube».</div>
       </div>
       <div class="queue"><h2>A continuación</h2>
@@ -292,13 +379,25 @@ function route() {
 function goList() { if (location.hash) location.hash = ''; else renderGrid(); }
 
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-alias],[data-kind],[data-order],#more,#back,#home,#menuBtn');
+  const t = e.target.closest('[data-hide],[data-filter],[data-alias],[data-kind],[data-order],#filterToggle,#clearFilters,#restoreHidden,#more,#back,#home,#menuBtn');
   if (!t) return;
   if (t.id === 'menuBtn') { document.body.classList.toggle('menu-open'); return; }
+  if (t.dataset.hide) {
+    e.preventDefault();
+    toggleHidden(t.dataset.hide);
+    const m = location.hash.match(/^#ver=([\w-]{11})/);
+    if (m) { if (hidden.has(m[1])) goList(); else renderWatch(m[1]); } else renderGrid();
+    return;
+  }
+  if (t.id === 'filterToggle') { state.panel = !state.panel; renderGrid(); return; }
+  if (t.dataset.filter) { state[t.dataset.filter] = t.dataset.val; }
+  if (t.id === 'clearFilters') Object.assign(state, DEFAULTS);
+  if (t.id === 'restoreHidden') { hidden.clear(); store.set('hidden', []); }
+  if (t.dataset.filter || t.id === 'clearFilters' || t.id === 'restoreHidden') { saveFilters(); state.shown = PAGE; renderGrid(); return; }
   if (t.id === 'more') { state.shown += PAGE; renderGrid(); return; }
   if (t.id === 'back') { history.length > 1 ? history.back() : goList(); return; }
   e.preventDefault();
-  if (t.id === 'home') { Object.assign(state, { alias: 'all', kind: 'all', q: '', order: 'top' }); $('#q').value = ''; }
+  if (t.id === 'home') { Object.assign(state, { alias: 'all', kind: 'all', q: '', order: 'new' }); $('#q').value = ''; }
   if (t.dataset.alias) state.alias = state.alias === t.dataset.alias && t.classList.contains('chip') ? 'all' : t.dataset.alias;
   if (t.dataset.kind) state.kind = t.dataset.kind;
   if (t.dataset.order) state.order = t.dataset.order;
@@ -307,6 +406,9 @@ document.addEventListener('click', e => {
 });
 $('#searchForm').addEventListener('submit', e => { e.preventDefault(); state.q = $('#q').value; state.shown = PAGE; goList(); });
 $('#q').addEventListener('input', e => { state.q = e.target.value; state.shown = PAGE; if (!location.hash) renderGrid(); });
+document.addEventListener('change', e => {
+  if (e.target.id === 'showHidden') { state.showHidden = e.target.checked; state.shown = PAGE; renderGrid(); }
+});
 window.addEventListener('hashchange', route);
 
 renderNav();
