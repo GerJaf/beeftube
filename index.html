@@ -264,6 +264,7 @@ function filtered() {
     v.views >= +state.views &&
     (state.showHidden || !hidden.has(v.id)));
   if (state.order === 'new') list = [...list].sort((a, b) => (b.f || '').localeCompare(a.f || '') || b.views - a.views);
+  if (state.order === 'old') list = [...list].sort((a, b) => (a.f || '9999').localeCompare(b.f || '9999') || b.views - a.views);
   if (state.order === 'views') list = [...list].sort((a, b) => b.views - a.views);
   if (state.order === 'shuffle') list = [...list].sort(() => Math.random() - 0.5);
   return list;
@@ -324,7 +325,7 @@ function renderGrid() {
   const n = activeFilters();
   const chips = `<button class="chip filter-toggle ${state.panel ? 'on' : ''}" id="filterToggle" aria-expanded="${state.panel}">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5h18v2H3zm4 6h10v2H7zm3 6h4v2h-4z"/></svg>Filtros${n ? `<span class="badge">${n}</span>` : ''}</button>`
-    + [['new', 'Más recientes'], ['views', 'Más vistos'], ['top', 'Destacados'], ['shuffle', 'Aleatorio']]
+    + [['new', 'Más recientes'], ['old', 'Más antiguos'], ['views', 'Más vistos'], ['top', 'Destacados'], ['shuffle', 'Aleatorio']]
     .map(([id, n]) => `<button class="chip ${state.order === id ? 'on' : ''}" data-order="${id}">${n}</button>`).join('')
     + ALIASES.slice(1).map(a => `<button class="chip ${state.alias === a.id ? 'on' : ''}" data-alias="${a.id}">${a.name}</button>`).join('');
   const cards = list.slice(0, state.shown).map(v => `
